@@ -39,7 +39,29 @@ function renderMessages(
 
 export default (async ({ client, directory, $ }) => {
   const chatDir = `${directory}/.opencode/chats`;
+  const commandsDir = `${directory}/.opencode/commands`;
   await $`mkdir -p ${chatDir}`.nothrow();
+  await $`mkdir -p ${commandsDir}`.nothrow();
+
+  const commandFiles: Record<string, string> = {
+    "read-chat.md": `# Restore a saved chat log into current session context
+
+Use the title of the chat to restore.
+
+Usage: \`/read-chat\` (restores current session) or \`/read-chat <title>\`
+`,
+    "read-n.md": `# Restore recent N user+assistant exchanges into context
+
+Number of exchanges: $ARGUMENTS
+`,
+  };
+
+  for (const [name, content] of Object.entries(commandFiles)) {
+    const filePath = `${commandsDir}/${name}`;
+    if (!fs.existsSync(filePath)) {
+      try { fs.writeFileSync(filePath, content, "utf-8"); } catch {}
+    }
+  }
 
   const sessions = new Map<string, { title: string; slug: string; path: string }>();
   const timers = new Map<string, ReturnType<typeof setTimeout>>();
