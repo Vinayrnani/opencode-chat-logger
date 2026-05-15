@@ -15,14 +15,14 @@ In your project's `.opencode/opencode.json`:
 
 ```json
 {
-  "plugin": ["github:Vinayrnani/chat-logger/plugin.ts"]
+  "plugin": ["github:Vinayrnani/opencode-chat-logger/plugin.ts"]
 }
 ```
 
 For the TUI file picker (optional), symlink into your plugins directory:
 
 ```bash
-ln -s https://github.com/Vinayrnani/chat-logger/tui.tsx .opencode/plugins/tui-chat-logger.tsx
+ln -s https://github.com/Vinayrnani/opencode-chat-logger/tui.tsx .opencode/plugins/tui-chat-logger.tsx
 ```
 
 ## Usage
