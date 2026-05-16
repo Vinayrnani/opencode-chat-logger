@@ -1,7 +1,6 @@
 {
   "$schema": "https://opencode.ai/config.json",
   "plugin": [
-    "oh-my-openagent",
-    "github:Vinayrnani/opencode-chat-logger/plugin.ts"
+    "oh-my-openagent"
   ]
 }
