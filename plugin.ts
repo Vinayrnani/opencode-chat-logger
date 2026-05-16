@@ -45,9 +45,9 @@ export default (async ({ client, directory, $ }) => {
   const commandFiles: Record<string, string> = {
     "read-chat.md": `# Restore a saved chat log into current session context
 
-Use the title of the chat to restore.
+Browse saved chats by number, or restore by title.
 
-Usage: \`/read-chat\` (restores current session) or \`/read-chat <title>\`
+Usage: \`/read-chat\` (list), \`/read-chat <number>\` (by index), or \`/read-chat <title>\`
 `,
     "read-n.md": `# Restore recent N user+assistant exchanges into context
 
@@ -165,43 +165,32 @@ Number of exchanges: $ARGUMENTS
         let files: string[] = [];
         try { files = fs.readdirSync(chatDir).filter((f: string) => f.endsWith(".md")); } catch {}
 
+        function numberedList(prefix?: string): string {
+          const lines = files.map((f, i) => `  ${i + 1}. ${f.replace(/\.md$/, "")}`);
+          const header = prefix ? `${prefix}\n\n` : "";
+          return files.length
+            ? `${header}Available chats:\n${lines.join("\n")}\n\nUsage: /read-chat <number|title>`
+            : "No saved chats yet.";
+        }
+
         if (!q) {
-          const sess = sessions.get(input.sessionID);
-          const defaultTitle = sess ? sess.title : null;
-
-          if (defaultTitle) {
-            const match = files.find((f: string) =>
-              f.replace(/\.md$/, "").toLowerCase() === defaultTitle.toLowerCase()
-            );
-            if (match) {
-              const content = fs.readFileSync(`${chatDir}/${match}`, "utf-8").trim();
-              if (content) {
-                pendingContext.set(input.sessionID, content);
-                output.parts = commandResult(`✅ Restored: ${defaultTitle}`);
-                return;
-              }
-            }
-          }
-
-          const list = files.map((f: string, i: number) => `  ${i + 1}. ${f.replace(/\.md$/, "")}`).join("\n");
-          output.parts = commandResult(
-            list
-              ? `Available chats:\n${list}\n\nUsage: /read-chat <title> (no args restores current session)`
-              : "No saved chats yet.",
-          );
+          output.parts = commandResult(numberedList());
           return;
         }
 
-        const match = files.find((f: string) =>
-          f.replace(/\.md$/, "").toLowerCase() === q.toLowerCase()
-        );
-        if (!match) {
-          const list = files.map((f: string, i: number) => `  ${i + 1}. ${f.replace(/\.md$/, "")}`).join("\n");
-          output.parts = commandResult(
-            list
-              ? `Chat "${q}" not found.\nAvailable chats:\n${list}`
-              : `Chat "${q}" not found. No saved chats yet.`,
+        const n = parseInt(q, 10);
+        let match: string | undefined;
+
+        if (!isNaN(n) && n >= 1 && n <= files.length) {
+          match = files[n - 1];
+        } else {
+          match = files.find((f) =>
+            f.replace(/\.md$/, "").toLowerCase() === q.toLowerCase()
           );
+        }
+
+        if (!match) {
+          output.parts = commandResult(numberedList(`Chat "${q}" not found.`));
           return;
         }
 
