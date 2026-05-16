@@ -1,5 +1,5 @@
 # Restore a saved chat log into current session context
 
-Use the title of the chat to restore.
+Browse saved chats by number, or restore by title.
 
-Usage: `/read-chat` (restores current session) or `/read-chat <title>`
+Usage: `/read-chat` (list), `/read-chat <number>` (by index), or `/read-chat <title>`

@@ -56,10 +56,7 @@ Number of exchanges: $ARGUMENTS
   };
 
   for (const [name, content] of Object.entries(commandFiles)) {
-    const filePath = `${commandsDir}/${name}`;
-    if (!fs.existsSync(filePath)) {
-      try { fs.writeFileSync(filePath, content, "utf-8"); } catch {}
-    }
+    try { fs.writeFileSync(`${commandsDir}/${name}`, content, "utf-8"); } catch {}
   }
 
   const sessions = new Map<string, { title: string; slug: string; path: string }>();
