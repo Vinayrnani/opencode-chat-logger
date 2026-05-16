@@ -1,6 +1,5 @@
 import type { Plugin } from "@opencode-ai/plugin";
-
-const fs = require("fs");
+import fs from "fs";
 
 function sanitize(title: string): string {
   return title.replace(/[/\\?%*:|"<>]/g, "-").replace(/\s+/g, " ").trim() || "Untitled";
@@ -86,7 +85,8 @@ Number of exchanges: $ARGUMENTS
 
       if (!existing) existing = new Set();
 
-      const newMsgs = msgs.filter((m: any) => m.id && !existing!.has(m.id));
+      const rawMsgs = msgs as Array<any>;
+      const newMsgs = rawMsgs.filter((m: any) => m.id && !existing!.has(m.id));
       if (!newMsgs.length) return;
 
       const content = renderMessages(newMsgs);
@@ -99,7 +99,7 @@ Number of exchanges: $ARGUMENTS
       }
 
       for (const m of newMsgs) {
-        if (m.id) existing!.add(m.id);
+        if (m.id && existing) existing.add(m.id);
       }
       writtenIds.set(id, existing!);
     } catch {}
@@ -112,6 +112,10 @@ Number of exchanges: $ARGUMENTS
   }
 
   const pendingContext = new Map<string, string>();
+
+  function commandResult(text: string): any {
+    return [{ type: "text" as const, text }];
+  }
 
   return {
     event: async ({ event }) => {
@@ -155,6 +159,7 @@ Number of exchanges: $ARGUMENTS
     },
 
     "command.execute.before": async (input, output) => {
+      console.error("[chat-logger] command.execute.before called:", input.command, "args:", input.arguments);
       if (input.command === "read-chat") {
         const q = input.arguments.trim();
         let files: string[] = [];
@@ -172,19 +177,18 @@ Number of exchanges: $ARGUMENTS
               const content = fs.readFileSync(`${chatDir}/${match}`, "utf-8").trim();
               if (content) {
                 pendingContext.set(input.sessionID, content);
-                output.parts = [{ type: "text", text: `✅ Restored: ${defaultTitle}` }];
+                output.parts = commandResult(`✅ Restored: ${defaultTitle}`);
                 return;
               }
             }
           }
 
           const list = files.map((f: string, i: number) => `  ${i + 1}. ${f.replace(/\.md$/, "")}`).join("\n");
-          output.parts = [{
-            type: "text",
-            text: list
+          output.parts = commandResult(
+            list
               ? `Available chats:\n${list}\n\nUsage: /read-chat <title> (no args restores current session)`
               : "No saved chats yet.",
-          }];
+          );
           return;
         }
 
@@ -193,21 +197,20 @@ Number of exchanges: $ARGUMENTS
         );
         if (!match) {
           const list = files.map((f: string, i: number) => `  ${i + 1}. ${f.replace(/\.md$/, "")}`).join("\n");
-          output.parts = [{
-            type: "text",
-            text: list
+          output.parts = commandResult(
+            list
               ? `Chat "${q}" not found.\nAvailable chats:\n${list}`
               : `Chat "${q}" not found. No saved chats yet.`,
-          }];
+          );
           return;
         }
 
         const content = fs.readFileSync(`${chatDir}/${match}`, "utf-8").trim();
         if (content) {
           pendingContext.set(input.sessionID, content);
-          output.parts = [{ type: "text", text: `✅ Restored: ${match.replace(/\.md$/, "")}` }];
+          output.parts = commandResult(`✅ Restored: ${match.replace(/\.md$/, "")}`);
         } else {
-          output.parts = [{ type: "text", text: `Chat "${q}" is empty.` }];
+          output.parts = commandResult(`Chat "${q}" is empty.`);
         }
         return;
       }
@@ -215,12 +218,12 @@ Number of exchanges: $ARGUMENTS
       if (input.command === "read-n") {
         const n = parseInt(input.arguments.trim(), 10);
         if (isNaN(n) || n < 1) {
-          output.parts = [{ type: "text", text: "Usage: /read-n <number> (e.g., /read-n 10)" }];
+          output.parts = commandResult("Usage: /read-n <number> (e.g., /read-n 10)");
           return;
         }
         try {
           const res = await client.session.messages({ path: { id: input.sessionID }, query: { directory } });
-          const msgs = res.data || [];
+          const msgs = (res.data || []) as Array<any>;
           const exchanges = msgs.filter((m: any) =>
             m.info?.role === "user" || m.info?.role === "assistant"
           );
@@ -228,12 +231,12 @@ Number of exchanges: $ARGUMENTS
           const content = renderMessages(lastN);
           if (content.trim()) {
             pendingContext.set(input.sessionID, content);
-            output.parts = [{ type: "text", text: `✅ Restored last ${n} exchanges` }];
+            output.parts = commandResult(`✅ Restored last ${n} exchanges`);
           } else {
-            output.parts = [{ type: "text", text: "No messages to restore." }];
+            output.parts = commandResult("No messages to restore.");
           }
         } catch {
-          output.parts = [{ type: "text", text: "Failed to retrieve session messages." }];
+          output.parts = commandResult("Failed to retrieve session messages.");
         }
         return;
       }

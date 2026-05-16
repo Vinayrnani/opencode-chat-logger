@@ -1,0 +1,45 @@
+{
+  "$schema": "https://raw.githubusercontent.com/code-yeongyu/oh-my-openagent/dev/assets/oh-my-opencode.schema.json",
+
+  "agents": {
+    "sisyphus": { "model": "opencode/big-pickle" },
+    "hephaestus": { "model": "opencode/qwen3.6-plus-free" },
+    "prometheus": { "model": "opencode/big-pickle" },
+    "oracle": { "model": "opencode/big-pickle" },
+    "metis": { "model": "opencode/qwen3.6-plus-free" },
+    "momus": { "model": "opencode/big-pickle" },
+    "atlas": { "model": "opencode/minimax-m2.5-free" },
+    "explore": { "model": "opencode/deepseek-v4-flash-free" },
+    "librarian": { "model": "opencode/deepseek-v4-flash-free" },
+    "multimodal-looker": { "disable": true }
+  },
+
+  "categories": {
+    "visual-engineering": { "model": "opencode/big-pickle" },
+    "ultrabrain": { "model": "opencode/big-pickle" },
+    "deep": { "model": "opencode/qwen3.6-plus-free" },
+    "artistry": { "model": "opencode/big-pickle" },
+    "quick": { "model": "opencode/nemotron-3-super-free" },
+    "unspecified-low": { "model": "opencode/minimax-m2.5-free" },
+    "unspecified-high": { "model": "opencode/big-pickle" },
+    "writing": { "model": "opencode/qwen3.6-plus-free" }
+  },
+
+  "background_task": {
+    "providerConcurrency": { "opencode": 10 },
+    "modelConcurrency": {
+      "opencode/big-pickle": 3,
+      "opencode/deepseek-v4-flash-free": 10,
+      "opencode/nemotron-3-super-free": 10,
+      "opencode/qwen3.6-plus-free": 5,
+      "opencode/minimax-m2.5-free": 10
+    }
+  },
+
+  "experimental": {
+    "aggressive_truncation": true,
+    "task_system": true
+  },
+
+  "disabled_agents": ["multimodal-looker"]
+}
