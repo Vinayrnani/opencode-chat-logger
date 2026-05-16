@@ -36,6 +36,26 @@ function renderMessages(
   return out.join("\n---\n\n");
 }
 
+function parseExchanges(content: string): Array<{ role: string; text: string }> {
+  const blocks = content.split(/^## (User|Assistant)$/m);
+  const exchanges = [];
+  for (let i = 1; i < blocks.length; i += 2) {
+    const role = blocks[i]?.toLowerCase() || "";
+    const text = blocks[i + 1]?.trim() || "";
+    if (text && (role === "user" || role === "assistant")) {
+      exchanges.push({ role, text });
+    }
+  }
+  return exchanges;
+}
+
+function countExchangesInFile(path: string): number {
+  if (!fs.existsSync(path)) return 0;
+  const content = fs.readFileSync(path, "utf-8");
+  const matches = content.match(/^## (User|Assistant)$/gm);
+  return matches ? matches.length : 0;
+}
+
 export default (async ({ client, directory, $ }) => {
   const chatDir = `${directory}/.opencode/chats`;
   const commandsDir = `${directory}/.opencode/commands`;
@@ -56,56 +76,46 @@ Number of exchanges: $ARGUMENTS
   };
 
   for (const [name, content] of Object.entries(commandFiles)) {
-    try { fs.writeFileSync(`${commandsDir}/${name}`, content, "utf-8"); } catch {}
+    try { fs.writeFileSync(`${commandsDir}/${name}`, content, "utf-8"); } catch (e) { console.error("[chat-logger] write command file error:", e); }
   }
 
-  const sessions = new Map<string, { title: string; slug: string; path: string }>();
+  let currentTitle: string | null = null;
+  const chatFiles = new Map<string, string>();
+  const messageCounts = new Map<string, number>();
   const timers = new Map<string, ReturnType<typeof setTimeout>>();
-  const writtenIds = new Map<string, Set<string>>();
 
-  async function flush(id: string) {
-    const s = sessions.get(id);
-    if (!s) return;
+  async function flush(title: string, sessionId: string) {
+    const path = chatFiles.get(title);
+    if (!path) return;
     try {
-      const res = await client.session.messages({ path: { id }, query: { directory } });
+      const res = await client.session.messages({ path: { id: sessionId }, query: { directory } });
       const msgs = res.data || [];
       if (!msgs.length) return;
 
-      let existing = writtenIds.get(id);
-      const fileExists = fs.existsSync(s.path);
+      const existingCount = messageCounts.get(title) ?? countExchangesInFile(path);
+      const newMsgs = msgs.slice(existingCount);
+      if (newMsgs.length === 0) return;
 
-      if (!existing && fileExists) {
-        existing = new Set(msgs.filter((m: any) => m.id).map((m: any) => m.id));
-        writtenIds.set(id, existing);
-        return;
-      }
-
-      if (!existing) existing = new Set();
-
-      const rawMsgs = msgs as Array<any>;
-      const newMsgs = rawMsgs.filter((m: any) => m.id && !existing!.has(m.id));
-      if (!newMsgs.length) return;
-
-      const content = renderMessages(newMsgs);
+      const content = renderMessages(newMsgs as Array<any>);
       if (!content.trim()) return;
 
+      const fileExists = fs.existsSync(path);
       if (!fileExists) {
-        fs.writeFileSync(s.path, `# ${s.title}\n\n_Created: ${ts(Date.now())}_\n\n${content}`, "utf-8");
+        fs.writeFileSync(path, `# ${title}\n\n_Created: ${ts(Date.now())}_\n\n${content}`, "utf-8");
       } else {
-        fs.appendFileSync(s.path, `\n\n${content}`, "utf-8");
+        fs.appendFileSync(path, `\n\n${content}`, "utf-8");
       }
 
-      for (const m of newMsgs) {
-        if (m.id && existing) existing.add(m.id);
-      }
-      writtenIds.set(id, existing!);
-    } catch {}
+      messageCounts.set(title, existingCount + newMsgs.length);
+    } catch (e) {
+      console.error("[chat-logger] flush error:", e);
+    }
   }
 
-  function defer(id: string, ms = 2000) {
-    const t = timers.get(id);
+  function defer(title: string, sessionId: string, ms = 2000) {
+    const t = timers.get(title);
     if (t) clearTimeout(t);
-    timers.set(id, setTimeout(() => { timers.delete(id); flush(id); }, ms));
+    timers.set(title, setTimeout(() => { timers.delete(title); flush(title, sessionId); }, ms));
   }
 
   const pendingContext = new Map<string, string>();
@@ -116,51 +126,34 @@ Number of exchanges: $ARGUMENTS
 
   return {
     event: async ({ event }) => {
-      if (event.type === "session.created") {
+      if (event.type === "session.created" || event.type === "session.updated") {
         const info = event.properties.info;
-        const title = info.title || "Untitled";
-        const { path, slug } = uniquePath(chatDir, title);
-        sessions.set(info.id, { title, slug, path });
-      } else if (event.type === "session.updated") {
-        const info = event.properties.info;
-        const existing = sessions.get(info.id);
-        if (!existing) {
-          const title = info.title || "Untitled";
-          const { path, slug } = uniquePath(chatDir, title);
-          sessions.set(info.id, { title, slug, path });
-        } else if (info.title && info.title !== existing.title) {
-          const { path, slug } = uniquePath(chatDir, info.title);
-          const old = existing.path;
-          existing.title = info.title;
-          existing.slug = slug;
-          existing.path = path;
-          if (old !== path && fs.existsSync(old)) {
-            try { fs.renameSync(old, path); } catch {}
-          }
+        const title = info?.title || "Untitled";
+        const { path } = uniquePath(chatDir, title);
+        currentTitle = title;
+        chatFiles.set(title, path);
+      } else if (event.type === "message.updated" || event.type === "message.part.updated") {
+        if (!currentTitle) return;
+        const props = event.properties as any;
+        const sessionId = props.sessionID || props.info?.sessionID || props.message?.sessionID;
+        if (sessionId) {
+          defer(currentTitle, sessionId, 1500);
         }
-      } else if (event.type === "message.updated") {
-        const sid = (event.properties as any).info?.sessionID;
-        if (sid && sessions.has(sid)) defer(sid, 1500);
-      } else if (event.type === "message.part.updated") {
-        const sid = (event.properties as any).part?.sessionID;
-        if (sid && sessions.has(sid)) defer(sid, 1500);
       } else if (event.type === "session.idle") {
+        if (!currentTitle) return;
         const { sessionID } = event.properties;
-        if (sessionID && sessions.has(sessionID)) {
-          const t = timers.get(sessionID);
-          if (t) clearTimeout(t);
-          timers.delete(sessionID);
-          await flush(sessionID);
-        }
+        const t = timers.get(currentTitle);
+        if (t) clearTimeout(t);
+        timers.delete(currentTitle);
+        await flush(currentTitle, sessionID);
       }
     },
 
     "command.execute.before": async (input, output) => {
-      console.error("[chat-logger] command.execute.before called:", input.command, "args:", input.arguments);
       if (input.command === "read-chat") {
         const q = input.arguments.trim();
         let files: string[] = [];
-        try { files = fs.readdirSync(chatDir).filter((f: string) => f.endsWith(".md")); } catch {}
+        try { files = fs.readdirSync(chatDir).filter((f: string) => f.endsWith(".md")); } catch (e) { console.error("[chat-logger] readdir error:", e); }
 
         function numberedList(prefix?: string): string {
           const lines = files.map((f, i) => `  ${i + 1}. ${f.replace(/\.md$/, "")}`);
@@ -207,22 +200,42 @@ Number of exchanges: $ARGUMENTS
           output.parts = commandResult("Usage: /read-n <number> (e.g., /read-n 10)");
           return;
         }
+
+        if (!currentTitle) {
+          output.parts = commandResult("No active session. Start a chat first.");
+          return;
+        }
+
+        const files = fs.readdirSync(chatDir).filter((f: string) => f.endsWith(".md"));
+        const safeTitle = sanitize(currentTitle);
+        const match = files.find((f: string) =>
+          f.replace(/\.md$/, "").startsWith(safeTitle) ||
+          f.replace(/\.md$/, "").startsWith(currentTitle)
+        );
+
+        if (!match) {
+          output.parts = commandResult(`No saved chat found for "${currentTitle}". Chat not yet saved.`);
+          return;
+        }
+
         try {
-          const res = await client.session.messages({ path: { id: input.sessionID }, query: { directory } });
-          const msgs = (res.data || []) as Array<any>;
-          const exchanges = msgs.filter((m: any) =>
-            m.info?.role === "user" || m.info?.role === "assistant"
-          );
+          const content = fs.readFileSync(`${chatDir}/${match}`, "utf-8");
+          const exchanges = parseExchanges(content);
           const lastN = exchanges.slice(-n * 2);
-          const content = renderMessages(lastN);
-          if (content.trim()) {
-            pendingContext.set(input.sessionID, content);
-            output.parts = commandResult(`✅ Restored last ${n} exchanges`);
+
+          if (lastN.length > 0) {
+            const formatted = lastN.map(e => ({
+              info: { role: e.role },
+              parts: [{ type: "text" as const, text: e.text }]
+            }));
+            pendingContext.set(input.sessionID, renderMessages(formatted));
+            output.parts = commandResult(`Restored last ${n} exchanges from "${match.replace(/\.md$/, "")}"`);
           } else {
-            output.parts = commandResult("No messages to restore.");
+            output.parts = commandResult("No exchanges found in saved chat.");
           }
-        } catch {
-          output.parts = commandResult("Failed to retrieve session messages.");
+        } catch (e) {
+          console.error("[chat-logger] read-n error:", e);
+          output.parts = commandResult("Failed to read saved chat.");
         }
         return;
       }

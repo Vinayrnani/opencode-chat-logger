@@ -16,7 +16,7 @@ export default (async (api) => {
       slash: { name: "read-chat" },
       onSelect: async (dialog) => {
         let files: string[] = [];
-        try { files = fs.readdirSync(chatDir()).filter((f: string) => f.endsWith(".md")); } catch {}
+        try { files = fs.readdirSync(chatDir()).filter((f: string) => f.endsWith(".md")); } catch (e) { console.error("[chat-logger] readdir error:", e); }
 
         if (!files.length || !dialog) {
           api.ui.toast({ title: "No saved chats", message: "No chat logs found in .opencode/chats/" });
