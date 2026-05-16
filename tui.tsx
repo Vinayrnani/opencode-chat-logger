@@ -24,7 +24,9 @@ export default (async (api) => {
         }
 
         const current = api.route.current;
-        const sessionID = current.name === "session" ? current.params.sessionID : "";
+        const sessionID: string = current.name === "session" && current.params
+          ? (current.params as { sessionID: string }).sessionID
+          : "";
 
         let picked = false;
 
